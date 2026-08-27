@@ -1,0 +1,13 @@
+<?php
+namespace WCTE;
+defined( 'ABSPATH' ) || exit;
+final class Provisioner {
+	private $batches; private $tokens;
+	public function __construct(Batch_Repository $b,Token_Service $t){$this->batches=$b;$this->tokens=$t;}
+	public function hooks(){ add_action('woocommerce_payment_complete',array($this,'provision')); add_action('woocommerce_order_status_processing',array($this,'provision')); add_action('woocommerce_order_status_completed',array($this,'provision')); add_action('woocommerce_order_fully_refunded',array($this,'refund')); }
+	public function provision($order_id){ $order=wc_get_order($order_id); if(!$order || !$order->is_paid())return; $subscription_id=(int)$order->get_meta('_subscription_renewal'); if(!$subscription_id && function_exists('wcs_get_subscriptions_for_order')) { $subs=wcs_get_subscriptions_for_order($order_id); if($subs)$subscription_id=(int)array_key_first($subs); }
+		foreach($order->get_items('line_item') as $item_id=>$item){ $product=$item->get_product(); if(!$product)continue; $variation=$product->is_type('variation')?$product->get_id():0; $parent=$variation?$product->get_parent_id():$product->get_id(); if('yes'!==get_post_meta($parent,'_wcte_enabled',true))continue; $course=$this->setting($variation,$parent,'_wcte_course_id'); $per=$this->setting($variation,$parent,'_wcte_per_unit'); $days=$this->setting($variation,$parent,'_wcte_window_days')?:30; if(!$course||!$per)continue; $token=$this->tokens->generate(); $now=current_datetime(); $expires=$now->add(new \DateInterval('P'.max(1,$days).'D')); $id=$this->batches->create(array('token_hash'=>$token['hash'],'customer_user_id'=>(int)$order->get_customer_id(),'order_id'=>(int)$order_id,'order_item_id'=>(int)$item_id,'subscription_id'=>$subscription_id,'product_id'=>$parent,'variation_id'=>$variation,'course_id'=>$course,'entitlements_total'=>$per*max(1,(int)$item->get_quantity()),'entitlements_used'=>0,'created_at'=>$now->format('Y-m-d H:i:s'),'expires_at'=>$expires->format('Y-m-d H:i:s'),'status'=>'active','created_by'=>0,'updated_at'=>$now->format('Y-m-d H:i:s'))); if($id){$order->update_meta_data('_wcte_token_'.$item_id,$this->tokens->seal($token['raw']));$order->save();do_action('wcte_batch_created',$id,(int)$order_id,(int)$item_id);} }
+	}
+	private function setting($variation,$parent,$key){$v=$variation?absint(get_post_meta($variation,$key,true)):0;return $v?:absint(get_post_meta($parent,$key,true));}
+	public function refund($order_id){ foreach($this->batches->query('order_id=%d',array($order_id),1000) as $b) if('revoked'!==$b->status)$this->batches->update($b->id,array('status'=>'revoked')); }
+}
