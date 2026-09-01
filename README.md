@@ -22,6 +22,14 @@ Customers see **My Account → Training Enrollments**, including status, remaini
 
 Capacity is reserved using a conditional atomic SQL update. Tutor enrollment is attempted only after reservation, verified through `EnrollmentModel::is_enrolled()`, and the seat is released on failure. `do_enroll()` is invoked through a reflected, version guard; when Tutor returns an enrollment ID that is not active, supported `update_enrollments()` is used to promote it to `completed`, followed by verification. Tutor-specific behavior is isolated in `Enrollment_Service`. Validate this adapter against the exact Tutor LMS release in staging when upgrading Tutor LMS.
 
+## Manual Tutor courses
+
+On a Tutor course's Course Builder, choose **Manual** beside the native Free/Paid Pricing Model options and enter an HTTP(S) **Learn More URL**. Manual is stored in WCTE-owned course metadata; Tutor's native price type remains a supported value, so no WooCommerce product, price, order, or cart action is required. Unenrolled visitors see a Tutor-styled **Learn More** link (or no acquisition CTA when the URL is missing or invalid), and Tutor's public free-course enrollment request is rejected.
+
+Manual mode affects acquisition only. Existing students keep Tutor's normal Start/Continue and progress experience, and trusted enrollment through Training Entitlements continues to use `Enrollment_Service` unchanged.
+
+Tutor does not currently expose a PHP API for adding a literal pricing-model choice to its React Course Builder. The integration is therefore isolated in `Course_Builder` and `assets/course-builder.js`: it clones the native pricing-card structure, tolerates React re-renders with a mutation observer, and persists WCTE metadata through a capability- and nonce-protected endpoint. The frontend replacement uses Tutor's `tutor_get_template_path` filter to replace only `single.course.enrollment`, while self-enrollment protection is deliberately limited to Tutor's `tutor_enroll_course` public AJAX action. Re-test these integration points when upgrading Tutor LMS.
+
 ## Administration and security
 
 WooCommerce → Training Entitlements supports search/filtering, roster inspection, revocation, valid reactivation, token regeneration, expiration updates, and total updates (never below completed redemptions). Every change is audited. Admin actions require `manage_woocommerce` and nonces. SQL is prepared, output escaped, input sanitized, public pages disclose only course and expiration, and only token HMACs are stored in the batch table. Recoverable token material is AES-256-GCM encrypted in private order metadata.
