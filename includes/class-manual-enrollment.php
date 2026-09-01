@@ -8,7 +8,7 @@ final class Manual_Enrollment {
 	const URL_META  = '_wcte_manual_enrollment_url';
 
 	public function hooks() {
-		add_action( 'wp', array( $this, 'replace_entry_box' ), 20 );
+		add_filter( 'tutor_get_template_path', array( $this, 'manual_enrollment_template' ), 20, 2 );
 		// Tutor's public free-course form posts to this AJAX action. Deliberately do
 		// not filter EnrollmentModel::do_enroll(), which WCTE legitimately calls.
 		add_action( 'wp_ajax_tutor_enroll_course', array( $this, 'block_public_enrollment' ), 0 );
@@ -24,27 +24,16 @@ final class Manual_Enrollment {
 		return wp_http_validate_url( $url ) ? $url : '';
 	}
 
-	public function replace_entry_box() {
-		if ( ! is_singular( 'courses' ) ) return;
-		$course_id = get_queried_object_id();
-		if ( ! self::is_manual_course( $course_id ) || $this->current_user_enrolled( $course_id ) ) return;
-
-		// These public actions are Tutor's intentionally small entry-box extension
-		// surface. The native price remains "free"; only acquisition is replaced.
-		remove_all_actions( 'tutor_course/single/entry-box/free' );
-		remove_all_actions( 'tutor_course/single/entry-box/woocommerce' );
-		add_action( 'tutor_course/single/entry-box/free', array( $this, 'render_learn_more' ) );
-		add_action( 'tutor_course/single/entry-box/woocommerce', array( $this, 'render_learn_more' ) );
-	}
-
-	private function current_user_enrolled( $course_id ) {
-		return is_user_logged_in() && (bool) \Tutor\Models\EnrollmentModel::is_enrolled( $course_id, get_current_user_id() );
-	}
-
-	public function render_learn_more() {
-		$url = self::get_manual_url( get_the_ID() );
-		if ( ! $url ) return;
-		echo '<a class="tutor-btn tutor-btn-primary tutor-btn-block" href="' . esc_url( $url ) . '">' . esc_html__( 'Learn More', 'training-entitlements' ) . '</a>';
+	/**
+	 * Replace only Tutor's unenrolled-user template. Tutor chooses its enrolled
+	 * template before this point, so Start/Continue/progress remain untouched.
+	 */
+	public function manual_enrollment_template( $path, $template ) {
+		$template = str_replace( '/', '.', (string) $template );
+		if ( 'single.course.enrollment' !== $template ) return $path;
+		$course_id = get_the_ID() ?: get_queried_object_id();
+		if ( ! self::is_manual_course( $course_id ) ) return $path;
+		return WCTE_PATH . 'templates/manual-course-enrollment.php';
 	}
 
 	public function block_public_enrollment() {

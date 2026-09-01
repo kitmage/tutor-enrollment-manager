@@ -13,7 +13,7 @@ final class Course_Builder {
 		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
 		$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
 		if ( ! $screen || ( 'courses' !== $screen->post_type && ! in_array( $page, array( 'create-course', 'tutor-course-builder' ), true ) ) ) return;
-		$course_id = isset( $_GET['post'] ) ? absint( $_GET['post'] ) : ( isset( $_GET['course_ID'] ) ? absint( $_GET['course_ID'] ) : 0 );
+		$course_id = isset( $_GET['post'] ) ? absint( $_GET['post'] ) : ( isset( $_GET['course_ID'] ) ? absint( $_GET['course_ID'] ) : ( isset( $_GET['course_id'] ) ? absint( $_GET['course_id'] ) : 0 ) );
 		wp_enqueue_script( 'wcte-course-builder', plugins_url( 'assets/course-builder.js', WCTE_FILE ), array(), WCTE_VERSION, true );
 		wp_localize_script( 'wcte-course-builder', 'wcteManualCourse', array(
 			'ajaxUrl'  => admin_url( 'admin-ajax.php' ),

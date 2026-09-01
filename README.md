@@ -28,7 +28,7 @@ On a Tutor course's Course Builder, choose **Manual** beside the native Free/Pai
 
 Manual mode affects acquisition only. Existing students keep Tutor's normal Start/Continue and progress experience, and trusted enrollment through Training Entitlements continues to use `Enrollment_Service` unchanged.
 
-Tutor does not currently expose a PHP API for adding a literal pricing-model choice to its React Course Builder. The integration is therefore isolated in `Course_Builder` and `assets/course-builder.js`: it augments the pricing radio group, tolerates React re-renders with a mutation observer, and persists WCTE metadata through a capability- and nonce-protected endpoint. The frontend replacement uses Tutor's `tutor_course/single/entry-box/free` and `tutor_course/single/entry-box/woocommerce` actions, while self-enrollment protection is deliberately limited to Tutor's `tutor_enroll_course` public AJAX action. Re-test these integration points when upgrading Tutor LMS.
+Tutor does not currently expose a PHP API for adding a literal pricing-model choice to its React Course Builder. The integration is therefore isolated in `Course_Builder` and `assets/course-builder.js`: it clones the native pricing-card structure, tolerates React re-renders with a mutation observer, and persists WCTE metadata through a capability- and nonce-protected endpoint. The frontend replacement uses Tutor's `tutor_get_template_path` filter to replace only `single.course.enrollment`, while self-enrollment protection is deliberately limited to Tutor's `tutor_enroll_course` public AJAX action. Re-test these integration points when upgrading Tutor LMS.
 
 ## Administration and security
 

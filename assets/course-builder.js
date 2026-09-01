@@ -4,49 +4,101 @@
 	if (!cfg) return;
 	var selected = !!cfg.isManual;
 	var draftUrl = cfg.url || '';
+	var saving = false;
 
-	function priceRadio() {
-		return document.querySelector('input[type="radio"][value="free"][name*="price"], input[type="radio"][value="free"]');
+	function nativeRadios() {
+		return Array.prototype.slice.call(document.querySelectorAll('input[type="radio"][name="course_price_type"]'));
 	}
+
 	function courseId() {
 		var input = document.querySelector('input[name="post_ID"], input[name="course_id"], input[name="id"]');
-		return Number(cfg.courseId || (input && input.value) || new URLSearchParams(location.search).get('post') || 0);
+		var query = new URLSearchParams(location.search);
+		return Number(cfg.courseId || (input && input.value) || query.get('post') || query.get('course_ID') || query.get('course_id') || 0);
 	}
-	function mount() {
-		var free = priceRadio();
-		if (!free) return;
-		var group = free.closest('[role="radiogroup"], fieldset, .tutor-form-group, .tutor-course-builder-section') || free.parentNode.parentNode;
-		if (!group || group.querySelector('[data-wcte-manual]')) return;
-		var box = document.createElement('div');
-		box.dataset.wcteManual = '1';
-		box.className = 'wcte-manual-pricing tutor-mt-16';
-		box.innerHTML = '<label class="tutor-form-check"><input class="tutor-form-check-input" type="radio" name="wcte-price-model" value="manual"><span>' + cfg.labels.manual + '</span></label>' +
-			'<div class="wcte-manual-url tutor-mt-12"><label class="tutor-form-label">' + cfg.labels.url + '</label><input class="tutor-form-control" type="url" required placeholder="https://example.com/training/"></div>';
-		group.appendChild(box);
-		var radio = box.querySelector('input[type="radio"]');
-		var field = box.querySelector('input[type="url"]');
+
+	function makeManualCard(free) {
+		var label = free.closest('label');
+		if (!label || !label.parentElement || !label.parentElement.parentElement) return null;
+		var card = label.parentElement.parentElement.cloneNode(true);
+		var cloneLabel = card.querySelector('label');
+		var radio = card.querySelector('input[type="radio"]');
+		if (!cloneLabel || !radio) return null;
+		card.dataset.wcteManual = '1';
+		radio.id = 'wcte-manual-price-model';
+		radio.name = 'wcte_price_model';
+		radio.value = 'manual';
+		cloneLabel.htmlFor = radio.id;
+		Array.prototype.slice.call(cloneLabel.childNodes).forEach(function (node) {
+			if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) node.remove();
+		});
+		cloneLabel.appendChild(document.createTextNode(cfg.labels.manual));
+		return card;
+	}
+
+	function makeUrlRow(options) {
+		var row = document.createElement('div');
+		row.dataset.wcteManualUrl = '1';
+		row.style.marginTop = '16px';
+		row.innerHTML = '<label class="tutor-form-label" for="wcte-manual-url"></label><input id="wcte-manual-url" class="tutor-form-control" type="url" required placeholder="https://example.com/training/">';
+		row.querySelector('label').textContent = cfg.labels.url;
+		var field = row.querySelector('input');
 		field.value = draftUrl;
 		field.addEventListener('input', function () { draftUrl = field.value; });
-		function paint() { box.querySelector('.wcte-manual-url').hidden = !selected; radio.checked = selected; }
-		radio.addEventListener('change', function () { free.click(); selected = true; paint(); });
-		group.addEventListener('change', function (event) { if (event.target !== radio && event.target.type === 'radio') { selected = false; paint(); } });
-		paint();
+		options.insertAdjacentElement('afterend', row);
+		return row;
+	}
+
+	function paint(options) {
+		var card = options.querySelector('[data-wcte-manual]');
+		var row = options.parentElement.querySelector(':scope > [data-wcte-manual-url]');
+		if (!card || !row) return;
+		card.querySelector('input').checked = selected;
+		if (selected) nativeRadios().forEach(function (radio) { radio.checked = false; });
+		row.hidden = !selected;
+	}
+
+	function mount() {
+		var radios = nativeRadios();
+		var free = radios.find(function (radio) { return radio.value === 'free'; });
+		if (!free) return;
+		var freeCard = free.closest('label').parentElement.parentElement;
+		var options = freeCard.parentElement;
+		if (!options.querySelector('[data-wcte-manual]')) {
+			var card = makeManualCard(free);
+			if (!card) return;
+			options.appendChild(card);
+			if (!options.parentElement.querySelector(':scope > [data-wcte-manual-url]')) makeUrlRow(options);
+			card.querySelector('input').addEventListener('change', function () {
+				free.click(); // Keep Tutor's internal/native value valid.
+				selected = true;
+				paint(options);
+			});
+		}
+		radios.forEach(function (radio) {
+			if (radio.dataset.wcteBound) return;
+			radio.dataset.wcteBound = '1';
+			radio.addEventListener('change', function () { selected = false; paint(options); });
+		});
+		paint(options);
 	}
 
 	function save() {
 		var id = courseId();
-		var field = document.querySelector('[data-wcte-manual] input[type="url"]');
-		if (!id || !field) return;
+		var field = document.querySelector('[data-wcte-manual-url] input');
+		if (!id || !field || saving) return;
 		if (selected && !field.checkValidity()) { field.reportValidity(); return; }
 		draftUrl = field.value;
+		saving = true;
 		var data = new URLSearchParams({action: 'wcte_manual_course_settings', nonce: cfg.nonce, course_id: id, manual: selected ? '1' : '0', url: draftUrl});
 		fetch(cfg.ajaxUrl, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: data.toString()})
 			.then(function (response) { return response.json(); }).then(function (result) { if (!result.success) throw new Error(); })
-			.catch(function () { window.alert(cfg.labels.error); });
+			.catch(function () { window.alert(cfg.labels.error); }).finally(function () { saving = false; });
 	}
 
 	document.addEventListener('click', function (event) {
-		if (event.target.closest('button[type="submit"], .tutor-course-builder-save, [data-cy="save-course"]')) window.setTimeout(save, 750);
+		var button = event.target.closest('button, [role="button"]');
+		if (!button || !/save|publish|update/i.test(button.textContent)) return;
+		[500, 1500, 4000].forEach(function (delay) { window.setTimeout(save, delay); });
 	});
 	new MutationObserver(mount).observe(document.documentElement, {childList: true, subtree: true});
 	mount();
