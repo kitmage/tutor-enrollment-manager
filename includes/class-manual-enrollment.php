@@ -8,11 +8,10 @@ final class Manual_Enrollment {
 	const URL_META  = '_wcte_manual_enrollment_url';
 
 	public function hooks() {
-		add_filter( 'tutor_get_template_path', array( $this, 'manual_enrollment_template' ), 20, 2 );
-		// Tutor's public free-course form posts to this AJAX action. Deliberately do
-		// not filter EnrollmentModel::do_enroll(), which WCTE legitimately calls.
-		add_action( 'wp_ajax_tutor_enroll_course', array( $this, 'block_public_enrollment' ), 0 );
-		add_action( 'wp_ajax_nopriv_tutor_enroll_course', array( $this, 'block_public_enrollment' ), 0 );
+		add_filter( 'tutor/course/single/entry-box/free', array( $this, 'replace_free_enrollment' ), 20, 2 );
+		// Intercept only Tutor's public Enroll Now form. Deliberately do not filter
+		// EnrollmentModel::do_enroll(), which WCTE legitimately calls directly.
+		add_action( 'template_redirect', array( $this, 'block_public_enrollment' ), 0 );
 	}
 
 	public static function is_manual_course( $course_id ) {
@@ -24,22 +23,27 @@ final class Manual_Enrollment {
 		return wp_http_validate_url( $url ) ? $url : '';
 	}
 
-	/**
-	 * Replace only Tutor's unenrolled-user template. Tutor chooses its enrolled
-	 * template before this point, so Start/Continue/progress remain untouched.
-	 */
-	public function manual_enrollment_template( $path, $template ) {
-		$template = str_replace( '/', '.', (string) $template );
-		if ( 'single.course.enrollment' !== $template ) return $path;
-		$course_id = get_the_ID() ?: get_queried_object_id();
-		if ( ! self::is_manual_course( $course_id ) ) return $path;
-		return WCTE_PATH . 'templates/manual-course-enrollment.php';
+	/** Replace Tutor's complete Free / Enroll Now block for Manual courses. */
+	public function replace_free_enrollment( $html, $course_id ) {
+		if ( ! self::is_manual_course( $course_id ) ) return $html;
+		$url = self::get_manual_url( $course_id );
+		if ( ! $url ) return '';
+		return sprintf(
+			'<a class="tutor-btn tutor-btn-primary tutor-btn-lg tutor-btn-block" href="%s">%s</a>',
+			esc_url( $url ),
+			esc_html__( 'Learn More', 'training-entitlements' )
+		);
 	}
 
 	public function block_public_enrollment() {
-		$course_id = isset( $_REQUEST['course_id'] ) ? absint( wp_unslash( $_REQUEST['course_id'] ) ) : 0;
-		if ( ! $course_id && isset( $_REQUEST['id'] ) ) $course_id = absint( wp_unslash( $_REQUEST['id'] ) );
-		if ( ! self::is_manual_course( $course_id ) ) return;
-		wp_send_json_error( array( 'message' => __( 'This course does not allow self-enrollment.', 'training-entitlements' ) ), 403 );
+		$action = isset( $_POST['tutor_course_action'] ) ? sanitize_text_field( wp_unslash( $_POST['tutor_course_action'] ) ) : '';
+		if ( '_tutor_course_enroll_now' !== $action ) return;
+		$course_id = isset( $_POST['tutor_course_id'] ) ? absint( wp_unslash( $_POST['tutor_course_id'] ) ) : 0;
+		if ( ! $course_id || ! self::is_manual_course( $course_id ) ) return;
+		wp_die(
+			esc_html__( 'This course does not allow self-enrollment.', 'training-entitlements' ),
+			'',
+			array( 'response' => 403 )
+		);
 	}
 }
